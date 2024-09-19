@@ -59,7 +59,6 @@ class Emosign_Model(torch.nn.Module):
         super(Emosign_Model, self).__init__()
         self.text_branch = Textual()
         self.audio_branch = Audio()
-
         self.video_branch = Video()
         self.trm_emo = nn.TransformerEncoderLayer(d_model=128, nhead=2, batch_first=True)
         self.content_classifier = nn.Sequential(nn.Linear(128 * 2, 128), nn.ReLU(), nn.Dropout(0.1), nn.Linear(128, 2))
@@ -68,9 +67,17 @@ class Emosign_Model(torch.nn.Module):
     def forward(self, **kwargs):
         output_text = self.text_branch(**kwargs)
         output_audio = self.audio_branch(**kwargs)
-        output_video = self.video_branch(**kwargs)
+        output_video = self.video_branch(**kwargs)      
         fusion_emo_fea = self.trm_emo(torch.cat((output_text, output_audio), 1))
         fusion_emo_fea = torch.mean(fusion_emo_fea, 1)
         msam_fea = torch.cat((fusion_emo_fea, output_video), 1)
-        output = self.content_classifier(msam_fea)
+        manipu_t_a = torch.mul(output_text, output_audio)
+        sub_t_a = output_text - output_audio
+        emoflu_t_a = self.trm_emo(torch.cat((manipu_t_a, sub_t_a), 1))
+        emosign = torch.cat((msam_fea, emoflu_t_a), 1)
+        manipu_a_v = torch.mul(output_audio, output_video)
+        sub_a_v = output_audio - output_video
+        emoflu_a_v = self.trm_emo(torch.cat((manipu_a_v, sub_a_v), 1))
+        emosignals = torch.cat((emosign, emoflu_a_v), 1)
+        output = self.content_classifier(emosignals)
         return output
